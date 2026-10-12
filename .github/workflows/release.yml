@@ -1,0 +1,22 @@
+# Builds the exe on every push and, on main, publishes it to joback94/Calendar_Week_Public, where installed copies update from.
+# The steps live in joback94/release-kit; this file only says where things are in this repo.
+name: Release
+on:
+  push:
+    paths-ignore: ['**.md', 'WeekNumber.exe']
+  pull_request:
+  # Actions > Release > Run workflow on main publishes a new version even without code changes.
+  workflow_dispatch:
+concurrency:
+  group: release-${{ github.ref }}
+permissions:
+  contents: write
+jobs:
+  windows:
+    uses: joback94/release-kit/.github/workflows/windows-exe.yml@main
+    with:
+      build-script: 'build.ps1'
+      exe: 'WeekNumber.exe'
+      public-repo: 'joback94/Calendar_Week_Public'
+      version-prefix: '1.0'
+    secrets: inherit

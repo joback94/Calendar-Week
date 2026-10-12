@@ -12,8 +12,9 @@ namespace WeekNumber
     static class Program
     {
         [STAThread]
-        static void Main()
+        static void Main(string[] args)
         {
+            AppUpdate.Updater.WaitForPrevious(args);
             bool createdNew;
             using (var mutex = new Mutex(true, "WeekNumberTrayApp_SingleInstance", out createdNew))
             {
@@ -34,6 +35,8 @@ namespace WeekNumber
         readonly NotifyIcon trayIcon;
         readonly System.Windows.Forms.Timer timer;
         readonly ToolStripMenuItem startupItem;
+        readonly AppUpdate.Updater updater = new AppUpdate.Updater("joback94/Calendar_Week_Public", "WeekNumber.exe");
+        readonly Control invoker = new Control();
         Icon currentIcon;
         int shownWeek = -1;
         bool shownLight;
@@ -48,6 +51,7 @@ namespace WeekNumber
 
             var menu = new ContextMenuStrip();
             menu.Items.Add(startupItem);
+            menu.Items.Add("Check for updates", null, delegate { updater.CheckNow(true); });
             menu.Items.Add(new ToolStripSeparator());
             menu.Items.Add("Exit", null, delegate { ExitThread(); });
 
@@ -67,6 +71,24 @@ namespace WeekNumber
 
             UpdateIcon(true);
             trayIcon.Visible = true;
+
+            GC.KeepAlive(invoker.Handle);
+            updater.Checked += (r, detail, manual) => invoker.BeginInvoke(new Action(() => OnUpdateChecked(r, detail, manual)));
+            updater.Start();
+        }
+
+        // Nothing here needs saving, so a new version takes over right away.
+        void OnUpdateChecked(AppUpdate.UpdateResult r, string detail, bool manual)
+        {
+            if (r == AppUpdate.UpdateResult.Installed)
+            {
+                try { updater.Relaunch(null); ExitThread(); }
+                catch (Exception) { }
+                return;
+            }
+            if (!manual) return;
+            string text = r == AppUpdate.UpdateResult.UpToDate ? "WeekNumber " + AppUpdate.Updater.CurrentVersion + " is the latest version." : detail;
+            trayIcon.ShowBalloonTip(5000, "WeekNumber", text, r == AppUpdate.UpdateResult.Failed ? ToolTipIcon.Warning : ToolTipIcon.Info);
         }
 
         void OnSystemChanged(object sender, EventArgs e)
@@ -179,6 +201,7 @@ namespace WeekNumber
             SystemEvents.DisplaySettingsChanged -= OnSystemChanged;
             timer.Stop();
             timer.Dispose();
+            invoker.Dispose();
             trayIcon.Visible = false;
             trayIcon.Dispose();
             if (currentIcon != null) currentIcon.Dispose();
