@@ -1,8 +1,7 @@
 # WeekNumber for macOS
 
-Menu bar item showing today's date and ISO 8601 calendar week, e.g. `Mon 12 Oct  ·  W42`.
-Click it for the full date, "Calendar week 42 of 53", a toggle to hide the date
-(week only), and "Open at Login".
+Menu bar item showing the ISO 8601 calendar week and today's date, e.g. `CW 42  Mon 12 Oct`.
+Click it for "Open at Login" and Quit.
 
 Requires macOS 13 or later.
 
