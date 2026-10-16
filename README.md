@@ -12,8 +12,10 @@ Tray icon. Right-click it for:
 - **Date calculator...** – also opens with a left-click on the icon
 - **Start with Windows**, **Exit**
 
-Build with `build.ps1` (uses the C# compiler that ships with Windows). Rebuild after
-pulling changes: the committed `WeekNumber.exe` is not rebuilt automatically.
+GitHub Actions builds `WeekNumber.exe` on every push to `main`: open the latest
+"Build Windows" run under the Actions tab and download the `WeekNumber` artifact.
+To build locally, run `build.ps1` (uses the C# compiler that ships with Windows).
+The `WeekNumber.exe` committed in the repo is not updated by the workflow.
 
 ## macOS (`macos/`)
 
