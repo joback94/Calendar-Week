@@ -6,6 +6,14 @@ on:
   pull_request:
   workflow_dispatch:
 
+# One main build at a time, so two quick merges can't race to commit the exe.
+concurrency:
+  group: build-windows-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: windows-latest
@@ -19,3 +27,16 @@ jobs:
           name: WeekNumber
           path: WeekNumber.exe
           if-no-files-found: error
+      # Keep the newest WeekNumber.exe in main, replacing the previous one.
+      # Pushes made with GITHUB_TOKEN don't trigger workflows, so this doesn't loop.
+      - name: Commit WeekNumber.exe to main
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        shell: pwsh
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add WeekNumber.exe
+          git diff --cached --quiet
+          if ($LASTEXITCODE -eq 0) { Write-Host "WeekNumber.exe unchanged"; exit 0 }
+          git commit -m "Update WeekNumber.exe to $($env:GITHUB_SHA.Substring(0, 7))"
+          git push origin HEAD:main

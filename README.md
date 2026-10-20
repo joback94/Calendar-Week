@@ -13,8 +13,9 @@ Tray icon. Right-click it for:
   `-97` (97 days ago) or `97` (in 97 days) and see the full date and calendar week. Esc closes it.
 - **Start with Windows**, **Exit**
 
-GitHub Actions builds `WeekNumber.exe` on every push to `main`: open the latest
-"Build Windows" run under the Actions tab and download the `WeekNumber` artifact.
+**Download:** [WeekNumber.exe](https://github.com/joback94/Calendar-Week/raw/main/WeekNumber.exe)
+is always the build of the latest `main`: after every push to `main`, GitHub Actions
+rebuilds it and commits it in place of the previous one.
 To build locally, run `build.ps1` (uses the C# compiler that ships with Windows).
 
 ## macOS (`macos/`)
