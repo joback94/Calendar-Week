@@ -17,7 +17,13 @@ namespace WeekNumber
             bool createdNew;
             using (var mutex = new Mutex(true, "WeekNumberTrayApp_SingleInstance", out createdNew))
             {
-                if (!createdNew) return;
+                if (!createdNew)
+                {
+                    MessageBox.Show("WeekNumber is already running.\n\nTo replace it with this copy, right-click the week number " +
+                        "in the taskbar notification area, choose Exit, then start this copy again.",
+                        "WeekNumber", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    return;
+                }
                 Application.EnableVisualStyles();
                 Application.SetCompatibleTextRenderingDefault(false);
                 Application.Run(new WeekNumberContext());
@@ -156,10 +162,7 @@ namespace WeekNumber
         {
             if (calculator == null || calculator.IsDisposed)
                 calculator = new DateCalculatorForm();
-            calculator.Show();
-            if (calculator.WindowState == FormWindowState.Minimized)
-                calculator.WindowState = FormWindowState.Normal;
-            calculator.Activate();
+            calculator.Toggle(Cursor.Position);
         }
 
         // ISO 8601: weeks start on Monday, week 1 contains the first Thursday of the year.
@@ -261,67 +264,117 @@ namespace WeekNumber
             base.ExitThreadCore();
         }
     }
-    // Answers "what date is N days ago / from now?" with the full date and its calendar week.
+    // Small flyout next to the tray icon: type -97 (97 days ago) or 97 (in 97 days) and read the full date.
     class DateCalculatorForm : Form
     {
         const int MaxDays = 100000;
+        const int CS_DROPSHADOW = 0x20000;
 
-        readonly NumericUpDown daysInput;
-        readonly ComboBox directionInput;
+        readonly TextBox daysInput;
         readonly Label resultLabel;
+        DateTime hiddenAt = DateTime.MinValue;
 
         public DateCalculatorForm()
         {
-            Text = "Date Calculator";
-            FormBorderStyle = FormBorderStyle.FixedDialog;
-            MaximizeBox = false;
-            MinimizeBox = false;
-            StartPosition = FormStartPosition.CenterScreen;
+            FormBorderStyle = FormBorderStyle.None;
+            ShowInTaskbar = false;
+            TopMost = true;
+            KeyPreview = true;
+            StartPosition = FormStartPosition.Manual;
             AutoScaleMode = AutoScaleMode.Dpi;
             AutoSize = true;
             AutoSizeMode = AutoSizeMode.GrowAndShrink;
+            BackColor = SystemColors.Window;
             Font = SystemFonts.MessageBoxFont;
-            Padding = new Padding(12);
+            Padding = new Padding(10);
 
-            daysInput = new NumericUpDown { Minimum = 0, Maximum = MaxDays, Width = 90, TextAlign = HorizontalAlignment.Right };
-            directionInput = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 140 };
-            directionInput.Items.AddRange(new object[] { "days ago", "days from now" });
-            directionInput.SelectedIndex = 0;
+            daysInput = new TextBox { Width = 260, BorderStyle = BorderStyle.FixedSingle };
             resultLabel = new Label
             {
                 AutoSize = true,
-                MinimumSize = new Size(360, 0),
-                Font = new Font(Font.FontFamily, Font.Size * 1.3f, FontStyle.Bold),
-                Margin = new Padding(3, 12, 3, 3),
+                Font = new Font(Font.FontFamily, Font.Size * 1.2f, FontStyle.Bold),
+                Margin = new Padding(3, 8, 3, 0),
+            };
+            var hintLabel = new Label
+            {
+                AutoSize = true,
+                ForeColor = SystemColors.GrayText,
+                Text = "-97 = 97 days ago     97 = in 97 days",
+                Margin = new Padding(3, 4, 3, 0),
             };
 
-            var row = new FlowLayoutPanel { AutoSize = true, WrapContents = false };
-            row.Controls.Add(daysInput);
-            row.Controls.Add(directionInput);
-
             var layout = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.TopDown, WrapContents = false };
-            layout.Controls.Add(row);
+            layout.Controls.Add(daysInput);
             layout.Controls.Add(resultLabel);
+            layout.Controls.Add(hintLabel);
             Controls.Add(layout);
 
-            daysInput.ValueChanged += delegate { UpdateResult(); };
-            daysInput.KeyUp += delegate { UpdateResult(); };
-            directionInput.SelectedIndexChanged += delegate { UpdateResult(); };
-            Activated += delegate { UpdateResult(); };
+            daysInput.TextChanged += delegate { UpdateResult(); };
+            KeyDown += delegate(object sender, KeyEventArgs e)
+            {
+                if (e.KeyCode == Keys.Escape) HideFlyout();
+            };
+            Deactivate += delegate { HideFlyout(); };
             UpdateResult();
+        }
+
+        protected override CreateParams CreateParams
+        {
+            get
+            {
+                CreateParams cp = base.CreateParams;
+                cp.ClassStyle |= CS_DROPSHADOW;
+                return cp;
+            }
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            base.OnPaint(e);
+            e.Graphics.DrawRectangle(SystemPens.ControlDark, 0, 0, Width - 1, Height - 1);
+        }
+
+        // Shows the flyout above the point (the tray icon), or hides it if it is open.
+        public void Toggle(Point anchor)
+        {
+            // Clicking the icon while the flyout is open deactivates (hides) it first; don't reopen on that same click.
+            if (Visible || (DateTime.UtcNow - hiddenAt).TotalMilliseconds < 300)
+            {
+                HideFlyout();
+                return;
+            }
+
+            UpdateResult();
+            PerformLayout();
+            Rectangle area = Screen.FromPoint(anchor).WorkingArea;
+            int x = Math.Max(area.Left, Math.Min(anchor.X - Width / 2, area.Right - Width));
+            int y = Math.Max(area.Top, Math.Min(anchor.Y - Height - 12, area.Bottom - Height));
+            Location = new Point(x, y);
+
+            Show();
+            Activate();
+            daysInput.Focus();
+            daysInput.SelectAll();
+        }
+
+        void HideFlyout()
+        {
+            if (!Visible) return;
+            hiddenAt = DateTime.UtcNow;
+            Hide();
         }
 
         void UpdateResult()
         {
-            // NumericUpDown only commits typed text on focus loss; read the text so the result updates while typing.
-            int days;
-            if (!int.TryParse(daysInput.Text, NumberStyles.Integer, CultureInfo.CurrentCulture, out days)
-                || days < 0 || days > MaxDays)
+            string text = daysInput.Text.Trim();
+            int days = 0;
+            if (text.Length > 0 && (!int.TryParse(text, NumberStyles.AllowLeadingSign, CultureInfo.CurrentCulture, out days)
+                || Math.Abs(days) > MaxDays))
             {
-                resultLabel.Text = "Enter a number of days from 0 to " + MaxDays + ".";
+                resultLabel.Text = "Enter a whole number of days";
                 return;
             }
-            DateTime date = DateTime.Today.AddDays(directionInput.SelectedIndex == 0 ? -days : days);
+            DateTime date = DateTime.Today.AddDays(days);
             // Some long date formats (e.g. en-GB) omit the weekday; always show it.
             string pattern = CultureInfo.CurrentCulture.DateTimeFormat.LongDatePattern;
             if (!pattern.Contains("dddd")) pattern = "dddd, " + pattern;

@@ -9,7 +9,8 @@ Tray icon. Right-click it for:
 
 - **Show in tray icon** – calendar week and date (week above day of month), calendar week only,
   or date (day of month) only. Hover the icon for the full date.
-- **Date calculator...** – also opens with a left-click on the icon
+- **Date calculator...** – also opens with a left-click on the icon: a small box where you type
+  `-97` (97 days ago) or `97` (in 97 days) and see the full date and calendar week. Esc closes it.
 - **Start with Windows**, **Exit**
 
 GitHub Actions builds `WeekNumber.exe` on every push to `main`: open the latest
