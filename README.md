@@ -11,6 +11,8 @@ Tray icon. Right-click it for:
   or date (day of month) only. Hover the icon for the full date.
 - **Date calculator...** – also opens with a left-click on the icon: a small box where you type
   `-97` (97 days ago) or `97` (in 97 days) and see the full date and calendar week. Esc closes it.
+- **Theme** – Same as Windows (follows light/dark mode), Light, Dark, or Eye comfort
+  (warm sepia, no pure white, less blue light). Applies to the menu and the calculator.
 - **Start with Windows**, **Exit**
 
 **Download:** [WeekNumber.exe](https://github.com/joback94/Calendar-Week/raw/main/WeekNumber.exe)
