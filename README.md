@@ -23,3 +23,7 @@ To build locally, run `build.ps1` (uses the C# compiler that ships with Windows)
 ## macOS (`macos/`)
 
 Menu bar item with the same options. See [macos/README.md](macos/README.md).
+
+**Download:** [WeekNumber-mac.zip](https://github.com/joback94/Calendar-Week/raw/main/WeekNumber-mac.zip)
+(universal, signed with Developer ID and notarized; macOS 13 or later). Unzip and move
+`WeekNumber.app` to Applications. Rebuilt by hand with `macos/build.sh`, not by CI.
