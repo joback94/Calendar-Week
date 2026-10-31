@@ -33,6 +33,104 @@ namespace WeekNumber
 
     enum DisplayMode { Both = 0, Week = 1, Date = 2 }
 
+    enum ThemeMode { System = 0, Light = 1, Dark = 2, EyeComfort = 3 }
+
+    // Colors for the menu and the calculator flyout.
+    class Palette
+    {
+        public Color Back, Input, Text, Muted, Border, Highlight;
+
+        static readonly Palette Light = new Palette
+        {
+            Back = Color.FromArgb(0xFF, 0xFF, 0xFF), Input = Color.FromArgb(0xFF, 0xFF, 0xFF),
+            Text = Color.FromArgb(0x1B, 0x1B, 0x1B), Muted = Color.FromArgb(0x6E, 0x6E, 0x6E),
+            Border = Color.FromArgb(0xCC, 0xCC, 0xCC), Highlight = Color.FromArgb(0xE5, 0xE5, 0xE5),
+        };
+        static readonly Palette Dark = new Palette
+        {
+            Back = Color.FromArgb(0x20, 0x20, 0x20), Input = Color.FromArgb(0x2D, 0x2D, 0x2D),
+            Text = Color.FromArgb(0xF2, 0xF2, 0xF2), Muted = Color.FromArgb(0xA0, 0xA0, 0xA0),
+            Border = Color.FromArgb(0x45, 0x45, 0x45), Highlight = Color.FromArgb(0x3A, 0x3A, 0x3A),
+        };
+        // Warm sepia: no pure white, little blue, softer contrast for long reading.
+        static readonly Palette EyeComfort = new Palette
+        {
+            Back = Color.FromArgb(0xF4, 0xEC, 0xD8), Input = Color.FromArgb(0xFB, 0xF5, 0xE6),
+            Text = Color.FromArgb(0x4B, 0x3A, 0x2A), Muted = Color.FromArgb(0x8C, 0x7A, 0x62),
+            Border = Color.FromArgb(0xD8, 0xC7, 0xA6), Highlight = Color.FromArgb(0xE8, 0xDB, 0xBE),
+        };
+
+        public static Palette For(ThemeMode theme, bool appsLight)
+        {
+            if (theme == ThemeMode.Light) return Light;
+            if (theme == ThemeMode.Dark) return Dark;
+            if (theme == ThemeMode.EyeComfort) return EyeComfort;
+            return appsLight ? Light : Dark;
+        }
+    }
+
+    class ThemedColorTable : ProfessionalColorTable
+    {
+        readonly Palette p;
+        public ThemedColorTable(Palette palette) { p = palette; UseSystemColors = false; }
+        public override Color ToolStripDropDownBackground { get { return p.Back; } }
+        public override Color ImageMarginGradientBegin { get { return p.Back; } }
+        public override Color ImageMarginGradientMiddle { get { return p.Back; } }
+        public override Color ImageMarginGradientEnd { get { return p.Back; } }
+        public override Color MenuBorder { get { return p.Border; } }
+        public override Color MenuItemBorder { get { return p.Highlight; } }
+        public override Color MenuItemSelected { get { return p.Highlight; } }
+        public override Color MenuItemSelectedGradientBegin { get { return p.Highlight; } }
+        public override Color MenuItemSelectedGradientEnd { get { return p.Highlight; } }
+        public override Color MenuItemPressedGradientBegin { get { return p.Highlight; } }
+        public override Color MenuItemPressedGradientEnd { get { return p.Highlight; } }
+        public override Color SeparatorDark { get { return p.Border; } }
+        public override Color SeparatorLight { get { return p.Back; } }
+        public override Color CheckBackground { get { return p.Back; } }
+        public override Color CheckSelectedBackground { get { return p.Highlight; } }
+        public override Color CheckPressedBackground { get { return p.Highlight; } }
+    }
+
+    class ThemedRenderer : ToolStripProfessionalRenderer
+    {
+        readonly Palette p;
+        public ThemedRenderer(Palette palette) : base(new ThemedColorTable(palette)) { p = palette; RoundedEdges = false; }
+
+        protected override void OnRenderItemText(ToolStripItemTextRenderEventArgs e)
+        {
+            e.TextColor = p.Text;
+            base.OnRenderItemText(e);
+        }
+
+        protected override void OnRenderArrow(ToolStripArrowRenderEventArgs e)
+        {
+            e.ArrowColor = p.Text;
+            base.OnRenderArrow(e);
+        }
+
+        protected override void OnRenderImageMargin(ToolStripRenderEventArgs e)
+        {
+            using (var brush = new SolidBrush(p.Back))
+                e.Graphics.FillRectangle(brush, e.AffectedBounds);
+        }
+
+        // The stock check mark is a black bitmap, invisible on dark; draw one in the text color.
+        protected override void OnRenderItemCheck(ToolStripItemImageRenderEventArgs e)
+        {
+            Rectangle r = e.ImageRectangle;
+            e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+            using (var pen = new Pen(p.Text, Math.Max(1.5f, r.Height / 9f)))
+            {
+                e.Graphics.DrawLines(pen, new[]
+                {
+                    new PointF(r.Left + r.Width * 0.22f, r.Top + r.Height * 0.52f),
+                    new PointF(r.Left + r.Width * 0.42f, r.Top + r.Height * 0.72f),
+                    new PointF(r.Left + r.Width * 0.78f, r.Top + r.Height * 0.30f),
+                });
+            }
+        }
+    }
+
     class WeekNumberContext : ApplicationContext
     {
         const string RunKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
@@ -44,8 +142,11 @@ namespace WeekNumber
         readonly System.Windows.Forms.Timer timer;
         readonly ToolStripMenuItem startupItem;
         readonly ToolStripMenuItem[] modeItems;
+        readonly ToolStripMenuItem[] themeItems;
+        readonly ContextMenuStrip menu;
         DateCalculatorForm calculator;
         DisplayMode mode;
+        ThemeMode theme;
         Icon currentIcon;
         string shownKey;
 
@@ -57,7 +158,8 @@ namespace WeekNumber
             startupItem = new ToolStripMenuItem("Start with Windows", null, OnToggleStartup);
             startupItem.Checked = IsStartupEnabled();
 
-            mode = LoadDisplayMode();
+            mode = (DisplayMode)LoadSetting("DisplayMode", typeof(DisplayMode), (int)DisplayMode.Both);
+            theme = (ThemeMode)LoadSetting("Theme", typeof(ThemeMode), (int)ThemeMode.System);
             modeItems = new[]
             {
                 new ToolStripMenuItem("Calendar week and date") { Tag = DisplayMode.Both },
@@ -72,8 +174,23 @@ namespace WeekNumber
             }
             UpdateModeChecks();
 
-            var menu = new ContextMenuStrip();
+            themeItems = new[]
+            {
+                new ToolStripMenuItem("Same as Windows") { Tag = ThemeMode.System },
+                new ToolStripMenuItem("Light") { Tag = ThemeMode.Light },
+                new ToolStripMenuItem("Dark") { Tag = ThemeMode.Dark },
+                new ToolStripMenuItem("Eye comfort") { Tag = ThemeMode.EyeComfort },
+            };
+            var themeItem = new ToolStripMenuItem("Theme");
+            foreach (ToolStripMenuItem item in themeItems)
+            {
+                item.Click += OnSelectTheme;
+                themeItem.DropDownItems.Add(item);
+            }
+
+            menu = new ContextMenuStrip();
             menu.Items.Add(showItem);
+            menu.Items.Add(themeItem);
             menu.Items.Add("Date calculator...", null, delegate { ShowCalculator(); });
             menu.Items.Add(new ToolStripSeparator());
             menu.Items.Add(startupItem);
@@ -98,13 +215,39 @@ namespace WeekNumber
             SystemEvents.TimeChanged += OnSystemChanged;
             SystemEvents.DisplaySettingsChanged += OnSystemChanged;
 
+            ApplyTheme();
             UpdateIcon(true);
             trayIcon.Visible = true;
         }
 
         void OnSystemChanged(object sender, EventArgs e)
         {
+            ApplyTheme();
             UpdateIcon(true);
+        }
+
+        void ApplyTheme()
+        {
+            foreach (ToolStripMenuItem item in themeItems)
+                item.Checked = (ThemeMode)item.Tag == theme;
+
+            Palette palette = Palette.For(theme, IsAppsLight());
+            menu.Renderer = new ThemedRenderer(palette);
+            foreach (ToolStripItem item in menu.Items)
+            {
+                var menuItem = item as ToolStripMenuItem;
+                if (menuItem == null) continue;
+                menuItem.DropDown.Renderer = menu.Renderer;
+            }
+            if (calculator != null && !calculator.IsDisposed)
+                calculator.ApplyTheme(palette);
+        }
+
+        void OnSelectTheme(object sender, EventArgs e)
+        {
+            theme = (ThemeMode)((ToolStripMenuItem)sender).Tag;
+            SaveSetting("Theme", (int)theme);
+            ApplyTheme();
         }
 
         void UpdateIcon(bool force)
@@ -135,8 +278,7 @@ namespace WeekNumber
         void OnSelectMode(object sender, EventArgs e)
         {
             mode = (DisplayMode)((ToolStripMenuItem)sender).Tag;
-            using (RegistryKey key = Registry.CurrentUser.CreateSubKey(SettingsKey))
-                key.SetValue("DisplayMode", (int)mode, RegistryValueKind.DWord);
+            SaveSetting("DisplayMode", (int)mode);
             UpdateModeChecks();
             UpdateIcon(true);
         }
@@ -147,21 +289,40 @@ namespace WeekNumber
                 item.Checked = (DisplayMode)item.Tag == mode;
         }
 
-        static DisplayMode LoadDisplayMode()
+        static int LoadSetting(string name, Type enumType, int fallback)
         {
             using (RegistryKey key = Registry.CurrentUser.OpenSubKey(SettingsKey))
             {
-                object value = key == null ? null : key.GetValue("DisplayMode");
-                if (value is int && Enum.IsDefined(typeof(DisplayMode), (int)value))
-                    return (DisplayMode)(int)value;
-                return DisplayMode.Both;
+                object value = key == null ? null : key.GetValue(name);
+                if (value is int && Enum.IsDefined(enumType, (int)value))
+                    return (int)value;
+                return fallback;
+            }
+        }
+
+        static void SaveSetting(string name, int value)
+        {
+            using (RegistryKey key = Registry.CurrentUser.CreateSubKey(SettingsKey))
+                key.SetValue(name, value, RegistryValueKind.DWord);
+        }
+
+        // Apps can be light while the taskbar is dark, so the menu and flyout use the apps setting.
+        static bool IsAppsLight()
+        {
+            using (RegistryKey key = Registry.CurrentUser.OpenSubKey(PersonalizeKey))
+            {
+                object value = key == null ? null : key.GetValue("AppsUseLightTheme");
+                return !(value is int) || (int)value != 0;
             }
         }
 
         void ShowCalculator()
         {
             if (calculator == null || calculator.IsDisposed)
+            {
                 calculator = new DateCalculatorForm();
+                calculator.ApplyTheme(Palette.For(theme, IsAppsLight()));
+            }
             calculator.Toggle(Cursor.Position);
         }
 
@@ -271,7 +432,10 @@ namespace WeekNumber
         const int CS_DROPSHADOW = 0x20000;
 
         readonly TextBox daysInput;
+        readonly Panel inputFrame;
         readonly Label resultLabel;
+        readonly Label hintLabel;
+        Palette palette;
         DateTime hiddenAt = DateTime.MinValue;
 
         public DateCalculatorForm()
@@ -284,27 +448,34 @@ namespace WeekNumber
             AutoScaleMode = AutoScaleMode.Dpi;
             AutoSize = true;
             AutoSizeMode = AutoSizeMode.GrowAndShrink;
-            BackColor = SystemColors.Window;
             Font = SystemFonts.MessageBoxFont;
             Padding = new Padding(10);
 
-            daysInput = new TextBox { Width = 260, BorderStyle = BorderStyle.FixedSingle };
+            // Borderless text box in a panel that draws the border, so it can take the theme's color.
+            daysInput = new TextBox { BorderStyle = BorderStyle.None, Location = new Point(6, 5), Width = 248 };
+            inputFrame = new Panel { Size = new Size(260, daysInput.Height + 10) };
+            inputFrame.Controls.Add(daysInput);
+            inputFrame.Paint += delegate(object sender, PaintEventArgs e)
+            {
+                if (palette == null) return;
+                using (var pen = new Pen(palette.Border))
+                    e.Graphics.DrawRectangle(pen, 0, 0, inputFrame.Width - 1, inputFrame.Height - 1);
+            };
             resultLabel = new Label
             {
                 AutoSize = true,
                 Font = new Font(Font.FontFamily, Font.Size * 1.2f, FontStyle.Bold),
                 Margin = new Padding(3, 8, 3, 0),
             };
-            var hintLabel = new Label
+            hintLabel = new Label
             {
                 AutoSize = true,
-                ForeColor = SystemColors.GrayText,
                 Text = "-97 = 97 days ago     97 = in 97 days",
                 Margin = new Padding(3, 4, 3, 0),
             };
 
             var layout = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.TopDown, WrapContents = false };
-            layout.Controls.Add(daysInput);
+            layout.Controls.Add(inputFrame);
             layout.Controls.Add(resultLabel);
             layout.Controls.Add(hintLabel);
             Controls.Add(layout);
@@ -331,7 +502,22 @@ namespace WeekNumber
         protected override void OnPaint(PaintEventArgs e)
         {
             base.OnPaint(e);
-            e.Graphics.DrawRectangle(SystemPens.ControlDark, 0, 0, Width - 1, Height - 1);
+            if (palette == null) return;
+            using (var pen = new Pen(palette.Border))
+                e.Graphics.DrawRectangle(pen, 0, 0, Width - 1, Height - 1);
+        }
+
+        public void ApplyTheme(Palette p)
+        {
+            palette = p;
+            BackColor = p.Back;
+            inputFrame.BackColor = p.Input;
+            daysInput.BackColor = p.Input;
+            daysInput.ForeColor = p.Text;
+            resultLabel.ForeColor = p.Text;
+            hintLabel.ForeColor = p.Muted;
+            inputFrame.Invalidate();
+            Invalidate();
         }
 
         // Shows the flyout above the point (the tray icon), or hides it if it is open.
