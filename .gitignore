@@ -1,0 +1,4 @@
+# Claude Code permissions approved on one machine; personal, not part of the project.
+.claude/settings.local.json
+# Mac build output
+macos/build/
