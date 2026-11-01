@@ -16,6 +16,7 @@ $versionCs = Join-Path $env:TEMP 'WeekNumber.Version.cs'
 
 $out = Join-Path $here 'WeekNumber.exe'
 & $csc /nologo /codepage:65001 /target:winexe /optimize+ "/out:$out" "/win32manifest:$(Join-Path $here 'app.manifest')" `
+    "/win32icon:$(Join-Path $here 'WeekNumber.ico')" `
     /r:System.dll /r:System.Windows.Forms.dll /r:System.Drawing.dll `
     (Join-Path $here 'WeekNumber.cs') (Join-Path $here 'Updater.cs') $versionCs
 if ($LASTEXITCODE -ne 0) { throw 'Build failed' }

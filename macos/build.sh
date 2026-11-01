@@ -18,6 +18,8 @@ ZIP=../WeekNumber-mac.zip
 rm -rf build
 mkdir -p "$APP/Contents/MacOS"
 cp Info.plist "$APP/Contents/Info.plist"
+mkdir -p "$APP/Contents/Resources"
+cp AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 
 # Version = number of commits, so every build from a newer checkout counts higher.
 VERSION=$(git rev-list --count HEAD)

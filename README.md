@@ -31,3 +31,8 @@ Menu bar item with the same options. See [macos/README.md](macos/README.md).
 **Download:** [WeekNumber-mac.zip](https://github.com/joback94/Calendar-Week/raw/main/WeekNumber-mac.zip)
 (universal, signed with Developer ID and notarized; macOS 13 or later). Unzip and move
 `WeekNumber.app` to Applications. Rebuilt by hand with `macos/build.sh`, not by CI.
+
+## Icon
+
+`icon/make-icon.swift` draws the app icon and writes `WeekNumber.ico` (Windows, built into the exe)
+and `macos/AppIcon.icns` (Mac). Run it on a Mac with `swift icon/make-icon.swift` after changing the design.
