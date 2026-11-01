@@ -12,8 +12,12 @@ namespace WeekNumber
     static class Program
     {
         [STAThread]
-        static void Main()
+        static void Main(string[] args)
         {
+            // After a self-update the new copy waits here for the old one to exit and free the mutex.
+            bool updated = args.Length > 0 && args[0] == "--updated";
+            AppUpdate.Updater.WaitForPrevious(args);
+
             bool createdNew;
             using (var mutex = new Mutex(true, "WeekNumberTrayApp_SingleInstance", out createdNew))
             {
@@ -26,7 +30,7 @@ namespace WeekNumber
                 }
                 Application.EnableVisualStyles();
                 Application.SetCompatibleTextRenderingDefault(false);
-                Application.Run(new WeekNumberContext());
+                Application.Run(new WeekNumberContext(updated));
             }
         }
     }
@@ -144,6 +148,8 @@ namespace WeekNumber
         readonly ToolStripMenuItem[] modeItems;
         readonly ToolStripMenuItem[] themeItems;
         readonly ContextMenuStrip menu;
+        readonly AppUpdate.Updater updater = new AppUpdate.Updater("joback94/Calendar-Week", "WeekNumber.exe");
+        readonly Control invoker = new Control();   // marshals update results from the worker thread
         DateCalculatorForm calculator;
         DisplayMode mode;
         ThemeMode theme;
@@ -153,7 +159,7 @@ namespace WeekNumber
         [DllImport("user32.dll")]
         static extern bool DestroyIcon(IntPtr handle);
 
-        public WeekNumberContext()
+        public WeekNumberContext(bool updated)
         {
             startupItem = new ToolStripMenuItem("Start with Windows", null, OnToggleStartup);
             startupItem.Checked = IsStartupEnabled();
@@ -194,6 +200,8 @@ namespace WeekNumber
             menu.Items.Add("Date calculator...", null, delegate { ShowCalculator(); });
             menu.Items.Add(new ToolStripSeparator());
             menu.Items.Add(startupItem);
+            menu.Items.Add("Check for updates (v" + AppUpdate.Updater.CurrentVersion + ")", null,
+                delegate { updater.CheckNow(true); });
             menu.Items.Add(new ToolStripSeparator());
             menu.Items.Add("Exit", null, delegate { ExitThread(); });
 
@@ -218,6 +226,32 @@ namespace WeekNumber
             ApplyTheme();
             UpdateIcon(true);
             trayIcon.Visible = true;
+
+            GC.KeepAlive(invoker.Handle);
+            updater.Checked += delegate(AppUpdate.UpdateResult r, string detail, bool manual)
+            {
+                invoker.BeginInvoke(new Action(delegate { OnUpdateChecked(r, detail, manual); }));
+            };
+            updater.Start();
+            if (updated)
+                trayIcon.ShowBalloonTip(5000, "WeekNumber", "Updated to version " + AppUpdate.Updater.CurrentVersion + ".", ToolTipIcon.Info);
+        }
+
+        // Nothing here needs saving, so a new version takes over right away.
+        void OnUpdateChecked(AppUpdate.UpdateResult r, string detail, bool manual)
+        {
+            if (r == AppUpdate.UpdateResult.Installed)
+            {
+                try { updater.Relaunch(null); ExitThread(); }
+                catch (Exception) { }
+                return;
+            }
+            if (!manual) return;
+            string text = r == AppUpdate.UpdateResult.UpToDate
+                ? "WeekNumber " + AppUpdate.Updater.CurrentVersion + " is the latest version."
+                : detail;
+            trayIcon.ShowBalloonTip(5000, "WeekNumber", text,
+                r == AppUpdate.UpdateResult.Failed ? ToolTipIcon.Warning : ToolTipIcon.Info);
         }
 
         void OnSystemChanged(object sender, EventArgs e)
@@ -419,6 +453,7 @@ namespace WeekNumber
             timer.Stop();
             timer.Dispose();
             if (calculator != null) calculator.Dispose();
+            invoker.Dispose();
             trayIcon.Visible = false;
             trayIcon.Dispose();
             if (currentIcon != null) currentIcon.Dispose();
@@ -470,7 +505,10 @@ namespace WeekNumber
             hintLabel = new Label
             {
                 AutoSize = true,
-                Text = "-97 = 97 days ago     97 = in 97 days",
+                // Sample date in the user's own short format, e.g. 25.12.2026 or 12/25/2026.
+                Text = "-97 = 97 days ago     97 = in 97 days\n" +
+                    new DateTime(DateTime.Today.Year, 12, 25).ToString("d", CultureInfo.CurrentCulture) +
+                    " = days until or since that date",
                 Margin = new Padding(3, 4, 3, 0),
             };
 
@@ -550,21 +588,41 @@ namespace WeekNumber
             Hide();
         }
 
+        // A number is an offset in days from today; a date gives the days until or since it.
         void UpdateResult()
         {
             string text = daysInput.Text.Trim();
+            DateTime today = DateTime.Today;
             int days = 0;
-            if (text.Length > 0 && (!int.TryParse(text, NumberStyles.AllowLeadingSign, CultureInfo.CurrentCulture, out days)
-                || Math.Abs(days) > MaxDays))
+            DateTime picked;
+            if (text.Length == 0 || int.TryParse(text, NumberStyles.AllowLeadingSign, CultureInfo.CurrentCulture, out days))
             {
-                resultLabel.Text = "Enter a whole number of days";
-                return;
+                if (Math.Abs(days) > MaxDays)
+                {
+                    resultLabel.Text = "Enter a whole number of days or a date";
+                    return;
+                }
+                resultLabel.Text = FormatDate(today.AddDays(days));
             }
-            DateTime date = DateTime.Today.AddDays(days);
+            else if (DateTime.TryParse(text, CultureInfo.CurrentCulture, DateTimeStyles.AllowWhiteSpaces, out picked))
+            {
+                int diff = (picked.Date - today).Days;
+                string span = Math.Abs(diff) == 1 ? "1 day" : Math.Abs(diff) + " days";
+                string relative = diff == 0 ? "Today" : diff > 0 ? "In " + span : span + " ago";
+                resultLabel.Text = relative + "\n" + FormatDate(picked.Date);
+            }
+            else
+            {
+                resultLabel.Text = "Enter a whole number of days or a date";
+            }
+        }
+
+        static string FormatDate(DateTime date)
+        {
             // Some long date formats (e.g. en-GB) omit the weekday; always show it.
             string pattern = CultureInfo.CurrentCulture.DateTimeFormat.LongDatePattern;
             if (!pattern.Contains("dddd")) pattern = "dddd, " + pattern;
-            resultLabel.Text = date.ToString(pattern, CultureInfo.CurrentCulture) + "  \u00B7  CW " + WeekNumberContext.GetIsoWeek(date);
+            return date.ToString(pattern, CultureInfo.CurrentCulture) + "  \u00B7  CW " + WeekNumberContext.GetIsoWeek(date);
         }
 
         protected override void Dispose(bool disposing)

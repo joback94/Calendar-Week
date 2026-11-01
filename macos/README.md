@@ -3,13 +3,18 @@
 Menu bar item showing the ISO 8601 calendar week and/or today's date, e.g. `CW 42  Mon 12 Oct`.
 
 - **Left click**: date calculator. Type `-97` (97 days ago) or `97` (in 97 days) and read the
-  full date and its calendar week. Esc or clicking elsewhere closes it.
+  full date and its calendar week, or type a date (e.g. `25.12.26`, in your regional format) to
+  see how many days until or since it. Esc or clicking elsewhere closes it.
 - **Right click** (or Control-click): menu
   - **Show in Menu Bar** – calendar week and date, calendar week only, or date only
   - **Theme** – Same as macOS (follows light/dark), Light, Dark, or Eye Comfort
     (warm sepia, no pure white, less blue light). Applies to the calculator; the menu
     follows Light/Dark.
-  - **Date Calculator…**, **Open at Login**, **Quit**
+  - **Date Calculator…**, **Open at Login**
+  - **Check for Updates** – also automatic a couple of minutes after start and twice a day. The
+    app downloads `WeekNumber-mac.zip` from main, accepts it only if it is signed by the same
+    developer team, swaps it in and relaunches.
+  - **Quit**
 
 Requires macOS 13 or later.
 
@@ -33,6 +38,9 @@ This writes `macos/build/WeekNumber.app` and `WeekNumber-mac.zip` at the repo ro
   ```
 
   `store-credentials` asks for an app-specific password (create one at appleid.apple.com).
+
+  A notarized build also writes `WeekNumber-mac.version`. Commit it together with
+  `WeekNumber-mac.zip`: installed copies update when that number is higher than their own.
 
 ## Install
 
