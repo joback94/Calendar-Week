@@ -14,11 +14,14 @@ Tray icon. Right-click it for:
   date (e.g. `25.12.2026`, in your regional format) to see how many days until or since it. Esc closes it.
 - **Theme** – Same as Windows (follows light/dark mode), Light, Dark, or Eye comfort
   (warm sepia, no pure white, less blue light). Applies to the menu and the calculator.
+- **Check for updates** – the app also checks by itself a couple of minutes after starting and
+  twice a day; a newer version is downloaded, verified (SHA-256) and swapped in, then the app restarts.
 - **Start with Windows**, **Exit**
 
 **Download:** [WeekNumber.exe](https://github.com/joback94/Calendar-Week/raw/main/WeekNumber.exe)
 is always the build of the latest `main`: after every push to `main`, GitHub Actions
-rebuilds it and commits it in place of the previous one.
+rebuilds it, commits it in place of the previous one and publishes it as a GitHub Release
+(`v1.0.<run number>`), which is where installed copies update from.
 To build locally, run `build.ps1` (uses the C# compiler that ships with Windows).
 
 ## macOS (`macos/`)

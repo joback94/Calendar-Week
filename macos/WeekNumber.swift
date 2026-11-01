@@ -79,6 +79,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let loginItem = NSMenuItem(title: "Open at Login", action: #selector(toggleLogin), keyEquivalent: "")
     private var timer: Timer?
     private lazy var calculator = DateCalculatorController()
+    private let updater = MacUpdater()
 
     private var displayMode: DisplayMode {
         get { DisplayMode(rawValue: UserDefaults.standard.integer(forKey: displayModeKey)) ?? .both }
@@ -128,6 +129,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(calculatorItem)
         menu.addItem(.separator())
         menu.addItem(loginItem)
+        let updateItem = NSMenuItem(title: "Check for Updates (\(MacUpdater.currentVersionString))",
+                                    action: #selector(checkForUpdates), keyEquivalent: "")
+        updateItem.target = self
+        menu.addItem(updateItem)
         menu.addItem(.separator())
         menu.addItem(NSMenuItem(title: "Quit", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
         menu.delegate = self
@@ -154,6 +159,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         applyTheme()
         refresh()
+        updater.start()
+    }
+
+    @objc private func checkForUpdates() {
+        updater.check(manual: true)
     }
 
     @objc private func refresh() {
@@ -450,6 +460,147 @@ final class DateCalculatorController: NSObject, NSTextFieldDelegate {
         formatter.timeStyle = .none
         return "\(formatter.string(from: date))  ·  CW \(calendar.component(.weekOfYear, from: date))"
     }
+}
+
+// Self-update. macos/build.sh stamps CFBundleVersion with the commit count and, for a notarized build,
+// writes WeekNumber-mac.version next to WeekNumber-mac.zip in the repo. The app reads that number from
+// main a couple of minutes after starting, then twice a day, and when "Check for Updates" is clicked.
+// When it is higher, it downloads the zip, checks the new app is validly signed by the same team,
+// swaps it in place of the running app and relaunches.
+@MainActor
+final class MacUpdater: NSObject {
+    private static let base = "https://raw.githubusercontent.com/joback94/Calendar-Week/main/"
+    private static let versionURL = URL(string: base + "WeekNumber-mac.version")!
+    private static let zipURL = URL(string: base + "WeekNumber-mac.zip")!
+
+    static var currentVersion: Int {
+        Int(Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "") ?? 0
+    }
+
+    static var currentVersionString: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?"
+    }
+
+    private var timer: Timer?
+    private var busy = false
+
+    // Unstamped builds (version 1 from the plain Info.plist) never update themselves.
+    private var enabled: Bool { Self.currentVersion > 1 }
+
+    func start() {
+        guard enabled else { return }
+        let first = Timer(timeInterval: 120, target: self, selector: #selector(autoCheck), userInfo: nil, repeats: false)
+        RunLoop.main.add(first, forMode: .common)
+        let repeating = Timer(timeInterval: 12 * 3600, target: self, selector: #selector(autoCheck), userInfo: nil, repeats: true)
+        RunLoop.main.add(repeating, forMode: .common)
+        timer = repeating
+    }
+
+    @objc private func autoCheck() {
+        check(manual: false)
+    }
+
+    func check(manual: Bool) {
+        guard enabled else {
+            if manual { tell("This copy was built without a version number and does not update itself.") }
+            return
+        }
+        guard !busy else { return }
+        busy = true
+        Task {
+            defer { busy = false }
+            do {
+                let (data, response) = try await URLSession.shared.data(from: Self.versionURL)
+                let text = String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+                guard (response as? HTTPURLResponse)?.statusCode == 200, let latest = Int(text),
+                      latest > Self.currentVersion else {
+                    if manual { tell("WeekNumber \(Self.currentVersionString) is the latest version.") }
+                    return
+                }
+                try await install()
+            } catch {
+                if manual { tell("Could not update: \(error.localizedDescription)") }
+            }
+        }
+    }
+
+    private func install() async throws {
+        let fm = FileManager.default
+        let work = fm.temporaryDirectory.appendingPathComponent("WeekNumber-update-\(UUID().uuidString)")
+        try fm.createDirectory(at: work, withIntermediateDirectories: true)
+        defer { try? fm.removeItem(at: work) }
+
+        let (download, _) = try await URLSession.shared.download(from: Self.zipURL)
+        let zip = work.appendingPathComponent("WeekNumber-mac.zip")
+        try fm.moveItem(at: download, to: zip)
+        try Self.run("/usr/bin/ditto", ["-x", "-k", zip.path, work.path])
+        let fresh = work.appendingPathComponent("WeekNumber.app")
+
+        // Only accept an app with a valid signature from the same developer team as this one.
+        try Self.run("/usr/bin/codesign", ["--verify", "--deep", "--strict", fresh.path])
+        let current = Bundle.main.bundleURL
+        guard let team = Self.teamID(of: current), Self.teamID(of: fresh) == team else {
+            throw UpdateError("the download is not signed by the same developer")
+        }
+
+        // A running app's bundle can be moved; put the new one in its place and keep the old until it is gone.
+        let old = work.appendingPathComponent("WeekNumber-old.app")
+        try fm.moveItem(at: current, to: old)
+        do {
+            try fm.moveItem(at: fresh, to: current)
+        } catch {
+            try? fm.moveItem(at: old, to: current)
+            throw error
+        }
+
+        // Start the new copy once this one has quit.
+        let relaunch = Process()
+        relaunch.executableURL = URL(fileURLWithPath: "/bin/sh")
+        relaunch.arguments = ["-c", "sleep 1; /usr/bin/open \"$0\"", current.path]
+        try relaunch.run()
+        NSApp.terminate(nil)
+    }
+
+    private static func teamID(of app: URL) -> String? {
+        guard let output = try? run("/usr/bin/codesign", ["-dv", "--verbose=2", app.path]) else { return nil }
+        for line in output.split(separator: "\n") where line.hasPrefix("TeamIdentifier=") {
+            let team = String(line.dropFirst("TeamIdentifier=".count))
+            return team == "not set" ? nil : team
+        }
+        return nil
+    }
+
+    // Runs a tool and returns stdout + stderr; throws when it exits with an error.
+    @discardableResult
+    private static func run(_ tool: String, _ arguments: [String]) throws -> String {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: tool)
+        process.arguments = arguments
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = pipe
+        try process.run()
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
+        let output = String(decoding: data, as: UTF8.self)
+        guard process.terminationStatus == 0 else {
+            throw UpdateError("\((tool as NSString).lastPathComponent) failed: \(output)")
+        }
+        return output
+    }
+
+    private func tell(_ message: String) {
+        NSApp.activate(ignoringOtherApps: true)
+        let alert = NSAlert()
+        alert.messageText = "WeekNumber"
+        alert.informativeText = message
+        alert.runModal()
+    }
+}
+
+struct UpdateError: LocalizedError {
+    let errorDescription: String?
+    init(_ message: String) { errorDescription = message }
 }
 
 // Top-level code runs on the main thread; app.run() never returns, so delegate stays alive.

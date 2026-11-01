@@ -12,8 +12,12 @@ namespace WeekNumber
     static class Program
     {
         [STAThread]
-        static void Main()
+        static void Main(string[] args)
         {
+            // After a self-update the new copy waits here for the old one to exit and free the mutex.
+            bool updated = args.Length > 0 && args[0] == "--updated";
+            AppUpdate.Updater.WaitForPrevious(args);
+
             bool createdNew;
             using (var mutex = new Mutex(true, "WeekNumberTrayApp_SingleInstance", out createdNew))
             {
@@ -26,7 +30,7 @@ namespace WeekNumber
                 }
                 Application.EnableVisualStyles();
                 Application.SetCompatibleTextRenderingDefault(false);
-                Application.Run(new WeekNumberContext());
+                Application.Run(new WeekNumberContext(updated));
             }
         }
     }
@@ -144,6 +148,8 @@ namespace WeekNumber
         readonly ToolStripMenuItem[] modeItems;
         readonly ToolStripMenuItem[] themeItems;
         readonly ContextMenuStrip menu;
+        readonly AppUpdate.Updater updater = new AppUpdate.Updater("joback94/Calendar-Week", "WeekNumber.exe");
+        readonly Control invoker = new Control();   // marshals update results from the worker thread
         DateCalculatorForm calculator;
         DisplayMode mode;
         ThemeMode theme;
@@ -153,7 +159,7 @@ namespace WeekNumber
         [DllImport("user32.dll")]
         static extern bool DestroyIcon(IntPtr handle);
 
-        public WeekNumberContext()
+        public WeekNumberContext(bool updated)
         {
             startupItem = new ToolStripMenuItem("Start with Windows", null, OnToggleStartup);
             startupItem.Checked = IsStartupEnabled();
@@ -194,6 +200,8 @@ namespace WeekNumber
             menu.Items.Add("Date calculator...", null, delegate { ShowCalculator(); });
             menu.Items.Add(new ToolStripSeparator());
             menu.Items.Add(startupItem);
+            menu.Items.Add("Check for updates (v" + AppUpdate.Updater.CurrentVersion + ")", null,
+                delegate { updater.CheckNow(true); });
             menu.Items.Add(new ToolStripSeparator());
             menu.Items.Add("Exit", null, delegate { ExitThread(); });
 
@@ -218,6 +226,32 @@ namespace WeekNumber
             ApplyTheme();
             UpdateIcon(true);
             trayIcon.Visible = true;
+
+            GC.KeepAlive(invoker.Handle);
+            updater.Checked += delegate(AppUpdate.UpdateResult r, string detail, bool manual)
+            {
+                invoker.BeginInvoke(new Action(delegate { OnUpdateChecked(r, detail, manual); }));
+            };
+            updater.Start();
+            if (updated)
+                trayIcon.ShowBalloonTip(5000, "WeekNumber", "Updated to version " + AppUpdate.Updater.CurrentVersion + ".", ToolTipIcon.Info);
+        }
+
+        // Nothing here needs saving, so a new version takes over right away.
+        void OnUpdateChecked(AppUpdate.UpdateResult r, string detail, bool manual)
+        {
+            if (r == AppUpdate.UpdateResult.Installed)
+            {
+                try { updater.Relaunch(null); ExitThread(); }
+                catch (Exception) { }
+                return;
+            }
+            if (!manual) return;
+            string text = r == AppUpdate.UpdateResult.UpToDate
+                ? "WeekNumber " + AppUpdate.Updater.CurrentVersion + " is the latest version."
+                : detail;
+            trayIcon.ShowBalloonTip(5000, "WeekNumber", text,
+                r == AppUpdate.UpdateResult.Failed ? ToolTipIcon.Warning : ToolTipIcon.Info);
         }
 
         void OnSystemChanged(object sender, EventArgs e)
@@ -419,6 +453,7 @@ namespace WeekNumber
             timer.Stop();
             timer.Dispose();
             if (calculator != null) calculator.Dispose();
+            invoker.Dispose();
             trayIcon.Visible = false;
             trayIcon.Dispose();
             if (currentIcon != null) currentIcon.Dispose();

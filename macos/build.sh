@@ -8,7 +8,8 @@
 #   - Otherwise it gets an ad-hoc signature: fine on this Mac, blocked by Gatekeeper elsewhere.
 # Notarization (needs Developer ID): set NOTARY_PROFILE to a profile saved once with
 #   xcrun notarytool store-credentials <profile> --apple-id <email> --team-id <TEAMID>
-# The result is ../WeekNumber-mac.zip, ready to commit and download.
+# The result is ../WeekNumber-mac.zip, ready to commit and download. A notarized build also writes
+# ../WeekNumber-mac.version: installed copies compare it with their own version and update themselves.
 set -eu
 cd "$(dirname "$0")"
 
@@ -17,6 +18,11 @@ ZIP=../WeekNumber-mac.zip
 rm -rf build
 mkdir -p "$APP/Contents/MacOS"
 cp Info.plist "$APP/Contents/Info.plist"
+
+# Version = number of commits, so every build from a newer checkout counts higher.
+VERSION=$(git rev-list --count HEAD)
+/usr/libexec/PlistBuddy -c "Set :CFBundleVersion $VERSION" "$APP/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString 1.0.$VERSION" "$APP/Contents/Info.plist"
 
 for arch in arm64 x86_64; do
     swiftc -O -target "$arch-apple-macos13.0" \
@@ -55,6 +61,8 @@ if [ -n "${NOTARY_PROFILE:-}" ]; then
     rm -f "$ZIP"
     ditto -c -k --keepParent "$APP" "$ZIP"
     spctl --assess --type execute --verbose "$APP"
+    echo "$VERSION" > ../WeekNumber-mac.version
+    echo "Version $VERSION: commit WeekNumber-mac.zip and WeekNumber-mac.version together."
 fi
 
 echo "Built $APP and $(cd .. && pwd)/WeekNumber-mac.zip"
