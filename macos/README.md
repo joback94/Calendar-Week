@@ -3,7 +3,8 @@
 Menu bar item showing the ISO 8601 calendar week and/or today's date, e.g. `CW 42  Mon 12 Oct`.
 
 - **Left click**: date calculator. Type `-97` (97 days ago) or `97` (in 97 days) and read the
-  full date and its calendar week. Esc or clicking elsewhere closes it.
+  full date and its calendar week, or type a date (e.g. `25.12.26`, in your regional format) to
+  see how many days until or since it. Esc or clicking elsewhere closes it.
 - **Right click** (or Control-click): menu
   - **Show in Menu Bar** – calendar week and date, calendar week only, or date only
   - **Theme** – Same as macOS (follows light/dark), Light, Dark, or Eye Comfort

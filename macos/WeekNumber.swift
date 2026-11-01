@@ -270,7 +270,7 @@ final class DateCalculatorController: NSObject, NSTextFieldDelegate {
     private let inputFrame = NSView()
     private let daysField = NSTextField(string: "")
     private let resultLabel = NSTextField(wrappingLabelWithString: "")
-    private let hintLabel = NSTextField(labelWithString: "-97 = 97 days ago     97 = in 97 days")
+    private let hintLabel = NSTextField(wrappingLabelWithString: DateCalculatorController.hintText())
     private var hiddenAt = Date.distantPast
 
     override init() {
@@ -307,6 +307,7 @@ final class DateCalculatorController: NSObject, NSTextFieldDelegate {
         resultLabel.isSelectable = true
         resultLabel.preferredMaxLayoutWidth = Self.width - 24
         hintLabel.font = .systemFont(ofSize: 11)
+        hintLabel.preferredMaxLayoutWidth = Self.width - 24
 
         let stack = NSStackView(views: [inputFrame, resultLabel, hintLabel])
         stack.translatesAutoresizingMaskIntoConstraints = false
@@ -394,23 +395,60 @@ final class DateCalculatorController: NSObject, NSTextFieldDelegate {
         return container.fittingSize
     }
 
+    // Sample date in the user's own short format, e.g. 25.12.26 or 12/25/26.
+    private static func hintText() -> String {
+        let calendar = isoCalendar()
+        let year = calendar.component(.year, from: Date())
+        let sample = calendar.date(from: DateComponents(year: year, month: 12, day: 25)) ?? Date()
+        return "-97 = 97 days ago     97 = in 97 days\n\(shortFormatter().string(from: sample)) = days until or since that date"
+    }
+
+    private static func shortFormatter() -> DateFormatter {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .short
+        formatter.timeStyle = .none
+        formatter.isLenient = true
+        return formatter
+    }
+
+    // A number is an offset in days from today; a date gives the days until or since it.
     private func update() {
         let text = daysField.stringValue.trimmingCharacters(in: .whitespaces)
-        var days = 0
-        if !text.isEmpty {
-            guard let value = Int(text), value.magnitude <= Self.maxDays else {
-                resultLabel.stringValue = "Enter a whole number of days"
+        let calendar = isoCalendar()
+        let today = calendar.startOfDay(for: Date())
+
+        if text.isEmpty || Int(text) != nil {
+            let days = Int(text) ?? 0
+            guard days.magnitude <= Self.maxDays,
+                  let date = calendar.date(byAdding: .day, value: days, to: today) else {
+                resultLabel.stringValue = "Enter a whole number of days or a date"
                 return
             }
-            days = value
+            resultLabel.stringValue = Self.describe(date, calendar: calendar)
+        } else if let picked = Self.parseDate(text) {
+            let day = calendar.startOfDay(for: picked)
+            let diff = calendar.dateComponents([.day], from: today, to: day).day ?? 0
+            let span = diff.magnitude == 1 ? "1 day" : "\(diff.magnitude) days"
+            let relative = diff == 0 ? "Today" : diff > 0 ? "In \(span)" : "\(span) ago"
+            resultLabel.stringValue = "\(relative)\n\(Self.describe(day, calendar: calendar))"
+        } else {
+            resultLabel.stringValue = "Enter a whole number of days or a date"
         }
-        let calendar = isoCalendar()
-        guard let date = calendar.date(byAdding: .day, value: days, to: calendar.startOfDay(for: Date())) else { return }
+    }
 
+    // Short format first (25.12.26), then medium (25 Dec 2026); lenient also takes a four-digit year.
+    private static func parseDate(_ text: String) -> Date? {
+        let formatter = shortFormatter()
+        if let date = formatter.date(from: text) { return date }
+        formatter.dateStyle = .medium
+        return formatter.date(from: text)
+    }
+
+    private static func describe(_ date: Date, calendar: Calendar) -> String {
         let formatter = DateFormatter()
         formatter.dateStyle = .full
         formatter.timeStyle = .none
-        resultLabel.stringValue = "\(formatter.string(from: date))  ·  CW \(calendar.component(.weekOfYear, from: date))"
+        return "\(formatter.string(from: date))  ·  CW \(calendar.component(.weekOfYear, from: date))"
     }
 }
 

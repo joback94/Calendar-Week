@@ -10,7 +10,8 @@ Tray icon. Right-click it for:
 - **Show in tray icon** – calendar week and date (week above day of month), calendar week only,
   or date (day of month) only. Hover the icon for the full date.
 - **Date calculator...** – also opens with a left-click on the icon: a small box where you type
-  `-97` (97 days ago) or `97` (in 97 days) and see the full date and calendar week. Esc closes it.
+  `-97` (97 days ago) or `97` (in 97 days) and see the full date and calendar week, or type a
+  date (e.g. `25.12.2026`, in your regional format) to see how many days until or since it. Esc closes it.
 - **Theme** – Same as Windows (follows light/dark mode), Light, Dark, or Eye comfort
   (warm sepia, no pure white, less blue light). Applies to the menu and the calculator.
 - **Start with Windows**, **Exit**

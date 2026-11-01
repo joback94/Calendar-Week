@@ -470,7 +470,10 @@ namespace WeekNumber
             hintLabel = new Label
             {
                 AutoSize = true,
-                Text = "-97 = 97 days ago     97 = in 97 days",
+                // Sample date in the user's own short format, e.g. 25.12.2026 or 12/25/2026.
+                Text = "-97 = 97 days ago     97 = in 97 days\n" +
+                    new DateTime(DateTime.Today.Year, 12, 25).ToString("d", CultureInfo.CurrentCulture) +
+                    " = days until or since that date",
                 Margin = new Padding(3, 4, 3, 0),
             };
 
@@ -550,21 +553,41 @@ namespace WeekNumber
             Hide();
         }
 
+        // A number is an offset in days from today; a date gives the days until or since it.
         void UpdateResult()
         {
             string text = daysInput.Text.Trim();
+            DateTime today = DateTime.Today;
             int days = 0;
-            if (text.Length > 0 && (!int.TryParse(text, NumberStyles.AllowLeadingSign, CultureInfo.CurrentCulture, out days)
-                || Math.Abs(days) > MaxDays))
+            DateTime picked;
+            if (text.Length == 0 || int.TryParse(text, NumberStyles.AllowLeadingSign, CultureInfo.CurrentCulture, out days))
             {
-                resultLabel.Text = "Enter a whole number of days";
-                return;
+                if (Math.Abs(days) > MaxDays)
+                {
+                    resultLabel.Text = "Enter a whole number of days or a date";
+                    return;
+                }
+                resultLabel.Text = FormatDate(today.AddDays(days));
             }
-            DateTime date = DateTime.Today.AddDays(days);
+            else if (DateTime.TryParse(text, CultureInfo.CurrentCulture, DateTimeStyles.AllowWhiteSpaces, out picked))
+            {
+                int diff = (picked.Date - today).Days;
+                string span = Math.Abs(diff) == 1 ? "1 day" : Math.Abs(diff) + " days";
+                string relative = diff == 0 ? "Today" : diff > 0 ? "In " + span : span + " ago";
+                resultLabel.Text = relative + "\n" + FormatDate(picked.Date);
+            }
+            else
+            {
+                resultLabel.Text = "Enter a whole number of days or a date";
+            }
+        }
+
+        static string FormatDate(DateTime date)
+        {
             // Some long date formats (e.g. en-GB) omit the weekday; always show it.
             string pattern = CultureInfo.CurrentCulture.DateTimeFormat.LongDatePattern;
             if (!pattern.Contains("dddd")) pattern = "dddd, " + pattern;
-            resultLabel.Text = date.ToString(pattern, CultureInfo.CurrentCulture) + "  \u00B7  CW " + WeekNumberContext.GetIsoWeek(date);
+            return date.ToString(pattern, CultureInfo.CurrentCulture) + "  \u00B7  CW " + WeekNumberContext.GetIsoWeek(date);
         }
 
         protected override void Dispose(bool disposing)
